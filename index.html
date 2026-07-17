@@ -303,15 +303,18 @@ const APPS = [
   { id:'kodi', name:'Kodi', pkg:'org.xbmc.kodi' },
 ];
 
+// Now-playing info per channel comes from real Freeview EPG data (see
+// refreshTvGuide/Android.getTvGuide) - these placeholders only show before
+// that first fetch completes.
 const CHANNELS = [
-  { id:'bbc1', name:'BBC One', now:'Evening News', time:'18:00 – 18:30' },
-  { id:'bbc2', name:'BBC Two', now:'Nature Explorers', time:'18:00 – 19:00' },
-  { id:'itv1', name:'ITV1', now:'The Quiz Hour', time:'17:45 – 18:45' },
-  { id:'ch4',  name:'Channel 4', now:'Home Renovators', time:'18:00 – 19:00' },
-  { id:'sky1', name:'Sky Sports Main Event', now:'Matchday Live', time:'17:30 – 20:00' },
-  { id:'sky2', name:'Sky Sports Football', now:'Transfer Roundup', time:'18:00 – 19:00' },
-  { id:'euro', name:'Eurosport 1', now:'Cycling: Stage 12', time:'16:00 – 19:00' },
-  { id:'news', name:'Sky News', now:'World Tonight', time:'18:00 – 19:00' },
+  { id:'bbc1', name:'BBC One', now:'Loading…', time:'' },
+  { id:'bbc2', name:'BBC Two', now:'Loading…', time:'' },
+  { id:'itv1', name:'ITV1', now:'Loading…', time:'' },
+  { id:'ch4',  name:'Channel 4', now:'Loading…', time:'' },
+  { id:'ch5',  name:'Channel 5', now:'Loading…', time:'' },
+  { id:'skynews', name:'Sky News', now:'Loading…', time:'' },
+  { id:'e4',   name:'E4', now:'Loading…', time:'' },
+  { id:'film4', name:'Film4', now:'Loading…', time:'' },
 ];
 
 /* =========================================================
@@ -442,6 +445,37 @@ async function refreshYouTube(){
     YT_VIDEOS = videos.slice(0, 10);
     rebuildIfActive();
   }
+}
+
+// Real UK Freeview listings (see Android.getTvGuide) - TV schedules don't
+// change minute to minute like live scores, so this only needs an occasional
+// refresh, not constant polling.
+function fetchTvGuide(){
+  return new Promise((resolve) => {
+    if(!(window.Android && typeof window.Android.getTvGuide === 'function')){ resolve(null); return; }
+    const id = 'r' + (__reqCounter++);
+    window.__httpCallbacks[id] = (raw) => {
+      try{
+        const data = JSON.parse(raw);
+        resolve(data && !data.error ? data : null);
+      }catch(e){ resolve(null); }
+    };
+    window.Android.getTvGuide(id);
+  });
+}
+
+async function refreshTvGuide(){
+  const guide = await fetchTvGuide();
+  if(!guide) return;
+  CHANNELS.forEach(ch => {
+    const entry = guide[ch.id];
+    if(entry){
+      ch.now = entry.title;
+      ch.time = entry.time;
+      ch.live = !!entry.live;
+    }
+  });
+  if(currentScreen === 'guide') renderGuide();
 }
 
 function relativeTimeIso(iso){
@@ -1220,6 +1254,7 @@ async function initialLoad(){
   await refreshGameweeks();
   await refreshSlow();
   await refreshLiveAndToday();
+  await refreshTvGuide();
   if(YT_SIGNED_IN) await refreshYouTube();
   document.getElementById('loadingOverlay').classList.add('hide');
 }
@@ -1228,6 +1263,7 @@ setTimeout(initialLoad, 50);
 setInterval(refreshLiveAndToday, 60000);  // live scores right now
 setInterval(refreshSlow, 300000);         // table + next-game lookups (rarely change)
 setInterval(refreshGameweeks, 1200000);   // this gameweek's fixtures, every 20 min (barely changes)
+setInterval(refreshTvGuide, 1800000);     // now-playing per channel, every 30 min
 setInterval(refreshYouTube, 900000);      // new uploads from subscriptions, every 15 min
 </script>
 
