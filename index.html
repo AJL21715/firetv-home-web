@@ -305,16 +305,19 @@ const APPS = [
 
 // Now-playing info per channel comes from real Freeview EPG data (see
 // refreshTvGuide/Android.getTvGuide) - these placeholders only show before
-// that first fetch completes.
+// that first fetch completes. pkg is the broadcaster's real app, launched on
+// select - there's no universal way to deep-link straight into a specific
+// live channel across every UK broadcaster's app, so this opens the right
+// app and you take it from there, same as an app tile does.
 const CHANNELS = [
-  { id:'bbc1', name:'BBC One', now:'Loading…', time:'' },
-  { id:'bbc2', name:'BBC Two', now:'Loading…', time:'' },
-  { id:'itv1', name:'ITV1', now:'Loading…', time:'' },
-  { id:'ch4',  name:'Channel 4', now:'Loading…', time:'' },
-  { id:'ch5',  name:'Channel 5', now:'Loading…', time:'' },
-  { id:'skynews', name:'Sky News', now:'Loading…', time:'' },
-  { id:'e4',   name:'E4', now:'Loading…', time:'' },
-  { id:'film4', name:'Film4', now:'Loading…', time:'' },
+  { id:'bbc1', name:'BBC One', pkg:'uk.co.bbc.iplayer', now:'Loading…', time:'' },
+  { id:'bbc2', name:'BBC Two', pkg:'uk.co.bbc.iplayer', now:'Loading…', time:'' },
+  { id:'itv1', name:'ITV1', pkg:'com.itv.itvhub', now:'Loading…', time:'' },
+  { id:'ch4',  name:'Channel 4', pkg:'com.channel4.ondemand', now:'Loading…', time:'' },
+  { id:'ch5',  name:'Channel 5', pkg:'com.channel5.my5', now:'Loading…', time:'' },
+  { id:'skynews', name:'Sky News', pkg:'com.sky.news.androidtv', now:'Loading…', time:'' },
+  { id:'e4',   name:'E4', pkg:'com.channel4.ondemand', now:'Loading…', time:'' },
+  { id:'film4', name:'Film4', pkg:'com.channel4.ondemand', now:'Loading…', time:'' },
 ];
 
 /* =========================================================
@@ -803,7 +806,7 @@ function signInCard(){
 
 function channelCard(ch){
   const c = el('div','card card--channel'); c.tabIndex = 0;
-  c.dataset.kind = 'channel'; c.dataset.id = ch.id; c.dataset.name = ch.name;
+  c.dataset.kind = 'channel'; c.dataset.id = ch.id; c.dataset.name = ch.name; c.dataset.pkg = ch.pkg;
   c.innerHTML = `
     <div class="ch-name">${ch.name}</div>
     <div class="ch-now">${ch.now}</div>
@@ -1139,8 +1142,13 @@ function activate(cardEl){
       try{ window.location.href = `intent://#Intent;package=${cardEl.dataset.pkg};launchFlags=0x10200000;end`; }catch(e){}
     }
   } else if(kind === 'channel'){
-    showToast(`Tuning to ${cardEl.dataset.name}\u2026`);
-    // Wire this up to your live-TV app's package/intent to actually switch channel.
+    showToast(`Opening ${cardEl.dataset.name}\u2026`);
+    if(cardEl.dataset.pkg){
+      recordAppOpen(cardEl.dataset.pkg, cardEl.dataset.name);
+      if(window.Android && typeof window.Android.launchApp === 'function'){
+        window.Android.launchApp(cardEl.dataset.pkg);
+      }
+    }
   } else if(kind === 'fixture'){
     showToast(`${cardEl.dataset.name}`);
   } else if(kind === 'hero'){
