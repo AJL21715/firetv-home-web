@@ -475,7 +475,7 @@ async function refreshTvGuide(){
       ch.live = !!entry.live;
     }
   });
-  if(currentScreen === 'guide') renderGuide();
+  renderGuide();
 }
 
 function relativeTimeIso(iso){
