@@ -855,7 +855,7 @@ function renderHome(){
     hero.dataset.kind = 'app'; hero.dataset.pkg = topApp.pkg; hero.dataset.name = topApp.name;
     hero.innerHTML = `<div class="eyebrow">Continue Watching</div><h1>${topApp.name}</h1><p>${relativeTime(topApp.lastOpened)}</p>`;
   } else {
-    hero.innerHTML = `<div class="eyebrow">What's On</div><h1>No live matches right now</h1><p>Check Sports for the next fixture.</p>`;
+    hero.innerHTML = `<div class="eyebrow">Welcome</div><h1>Pick something to open</h1><p>Whatever you open will show up here next time.</p>`;
   }
   def.el.appendChild(hero); def.navRows.push([hero]);
 
