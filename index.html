@@ -197,6 +197,16 @@
   .card--video .vtitle{ font-size:13px; font-weight:700; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .card--video .vchannel{ font-size:11.5px; color:var(--text-muted); }
   .card--video .vtime{ font-size:11px; color:var(--text-muted); opacity:0.7; }
+
+  .search-input-wrap{ padding:6px 10px 20px 10px; }
+  .search-input{ display:block; width:100%; max-width:480px; padding:15px 18px; font-size:16px;
+    font-family:inherit; color:var(--text); background:var(--glass); border-radius:12px; cursor:text; }
+  .search-input::placeholder{ color:var(--text-muted); }
+  .card--poster{ width:11.5vw; max-width:150px; min-width:110px; display:flex; flex-direction:column; gap:8px; overflow:hidden; padding-bottom:10px; }
+  .card--poster .thumb{ width:100%; aspect-ratio:2/3; background:var(--glass-hi); display:flex; align-items:center; justify-content:center; }
+  .card--poster .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .card--poster .ptitle{ padding:0 10px; font-size:12.5px; font-weight:700; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card--poster .pyear{ padding:0 10px; font-size:11px; color:var(--text-muted); }
   .card--signin{ width:20vw; max-width:270px; min-width:200px; padding:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center; aspect-ratio:16/9; }
   .card--signin .label{ font-size:13px; font-weight:700; }
   .card--signin .sub{ font-size:11.5px; color:var(--text-muted); }
@@ -382,6 +392,58 @@ function apiGet(path){
     };
     window.Android.httpGetAsync(path, id);
   });
+}
+
+// "Where to Watch" search - looks a title up on TMDB (see MainActivity.kt /
+// TmdbNetwork.kt) and returns simplified match/provider data. No desktop-
+// browser fallback since there's no Android bridge to proxy through there.
+function searchTitlesAsync(query){
+  if(!(window.Android && typeof window.Android.searchTitles === 'function')) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const id = 'r' + (__reqCounter++);
+    window.__httpCallbacks[id] = (raw) => {
+      try{ resolve(JSON.parse(raw) || []); }catch(e){ resolve([]); }
+    };
+    window.Android.searchTitles(query, id);
+  });
+}
+function getWatchProvidersAsync(tmdbId, mediaType){
+  if(!(window.Android && typeof window.Android.getWatchProviders === 'function')) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const id = 'r' + (__reqCounter++);
+    window.__httpCallbacks[id] = (raw) => {
+      try{ resolve(JSON.parse(raw) || []); }catch(e){ resolve([]); }
+    };
+    window.Android.getWatchProviders(tmdbId, mediaType, id);
+  });
+}
+
+// Maps TMDB/JustWatch provider names to our own app ids (see APPS above) so
+// we only ever offer to launch something you actually have installed. Not
+// every provider TMDB knows about has an entry here - if there's no matching
+// app in APPS at all, there's nothing useful to launch into anyway.
+const PROVIDER_NAME_TO_APP_ID = {
+  'Netflix':'netflix',
+  'Amazon Prime Video':'prime', 'Prime Video':'prime', 'Amazon Video':'prime',
+  'Disney Plus':'disney', 'Disney+':'disney',
+  'Now':'nowtv', 'Now TV':'nowtv', 'NOW':'nowtv',
+  'Apple TV Plus':'appletv', 'Apple TV+':'appletv', 'Apple TV':'appletv',
+  'BBC iPlayer':'iplayer',
+  'ITVX':'itvx', 'ITV Hub':'itvx',
+  'Channel 4':'all4', 'All 4':'all4',
+  'My5':'my5', 'Channel 5':'my5',
+  'Discovery Plus':'discoveryplus', 'Discovery+':'discoveryplus',
+  'Paramount Plus':'paramountplus', 'Paramount+':'paramountplus',
+  'Peacock':'peacock',
+  'Max':'max', 'HBO Max':'max',
+  'Crunchyroll':'crunchyroll',
+  'Pluto TV':'plutotv',
+  'Tubi':'tubi',
+  'YouTube':'youtube',
+};
+function resolveInstalledAppsForProviders(providerNames){
+  const ids = new Set(providerNames.map(n => PROVIDER_NAME_TO_APP_ID[n]).filter(Boolean));
+  return getVisibleApps().filter(a => ids.has(a.id));
 }
 
 /* =========================================================
@@ -671,6 +733,7 @@ const NAV = [
   { id:'guide', label:'Guide', icon:`<rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M9 20h6M12 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>` },
   { id:'sports', label:'Sports', icon:`<circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v6M12 14.5v6M4.5 9l6 3-6 3M19.5 9l-6 3 6 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>` },
   { id:'apps', label:'Apps', icon:`<rect x="4" y="4" width="7" height="7" rx="1.4" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.4" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.4" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.4" stroke="currentColor" stroke-width="1.6"/>` },
+  { id:'search', label:'Search', icon:`<circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>` },
 ];
 
 /* =========================================================
@@ -804,6 +867,15 @@ function signInCard(){
   return c;
 }
 
+function posterCard(item){
+  const c = el('div','card card--poster'); c.tabIndex = 0;
+  c.dataset.kind = 'search-result'; c.dataset.id = item.id; c.dataset.mediaType = item.mediaType; c.dataset.name = item.title;
+  const thumbHtml = item.poster ? `<img src="${item.poster}" alt="${item.title}">` : `<span class="icon-letter">${item.title.charAt(0)}</span>`;
+  const yearLabel = [item.year, item.mediaType === 'tv' ? 'TV' : ''].filter(Boolean).join(' · ');
+  c.innerHTML = `<div class="thumb">${thumbHtml}</div><div class="ptitle">${item.title}</div><div class="pyear">${yearLabel}</div>`;
+  return c;
+}
+
 function channelCard(ch){
   const c = el('div','card card--channel'); c.tabIndex = 0;
   c.dataset.kind = 'channel'; c.dataset.id = ch.id; c.dataset.name = ch.name; c.dataset.pkg = ch.pkg;
@@ -926,6 +998,87 @@ function renderGuide(){
     const { wrap } = row(i===0 ? 'Live TV' : '\u00A0', cards);
     def.el.appendChild(wrap); def.navRows.push(cards);
   });
+}
+
+/* =========================================================
+   SEARCH — "Where to Watch". Looks a title up on TMDB, then shows which of
+   your actually-installed apps have it (subscription vs rent/buy), same as
+   Guide/App tiles this just launches the app itself, not a deep link into
+   the exact title - there's no universal way to do that across every app.
+   ========================================================= */
+let searchQuery = '';
+let searchResultsCache = [];
+
+function renderSearch(){
+  const def = screenDefs.search;
+  def.el.innerHTML = ''; def.navRows = [];
+
+  const inputWrap = el('div','search-input-wrap');
+  const input = document.createElement('input');
+  input.type = 'text'; input.className = 'card search-input'; input.tabIndex = 0;
+  input.placeholder = 'Search for a show or movie…';
+  input.dataset.kind = 'search-input';
+  input.value = searchQuery;
+  input.addEventListener('input', () => { searchQuery = input.value; });
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); submitSearch(input.value); }
+  });
+  inputWrap.appendChild(input);
+  def.el.appendChild(inputWrap);
+  def.navRows.push([input]);
+
+  if(searchResultsCache.length){
+    const cards = searchResultsCache.map(posterCard);
+    const { wrap } = row('Results', cards);
+    def.el.appendChild(wrap); def.navRows.push(cards);
+  } else {
+    def.el.appendChild(el('div','empty-state','Search for a title to see which of your apps has it.'));
+  }
+}
+
+async function submitSearch(query){
+  query = (query || '').trim();
+  if(!query) return;
+  showToast('Searching…');
+  const results = await searchTitlesAsync(query);
+  searchResultsCache = results.slice(0, 12);
+  renderSearch();
+  const rows = currentRows();
+  if(currentScreen === 'search' && rows.length > 1){
+    rowIndex = 1; colIndex = 0; refreshFocusVisuals();
+  }
+}
+
+async function showProvidersFor(cardEl){
+  showToast('Checking where to watch…');
+  const providers = await getWatchProvidersAsync(Number(cardEl.dataset.id), cardEl.dataset.mediaType);
+  const subNames = providers.filter(p => p.category === 'flatrate' || p.category === 'free' || p.category === 'ads').map(p => p.name);
+  const buyNames = providers.filter(p => p.category === 'rent' || p.category === 'buy').map(p => p.name);
+  const watchApps = resolveInstalledAppsForProviders(subNames);
+  const buyApps = resolveInstalledAppsForProviders(buyNames).filter(a => !watchApps.some(w => w.id === a.id));
+
+  const def = screenDefs.search;
+  if(currentScreen !== 'search') return;
+  const baseRowCount = searchResultsCache.length ? 2 : 1;
+  while(def.el.children.length > baseRowCount) def.el.removeChild(def.el.lastChild);
+  def.navRows = def.navRows.slice(0, baseRowCount);
+
+  if(watchApps.length || buyApps.length){
+    if(watchApps.length){
+      const cards = watchApps.map(appCard);
+      const { wrap } = row(`Watch "${cardEl.dataset.name}" on`, cards);
+      def.el.appendChild(wrap); def.navRows.push(cards);
+    }
+    if(buyApps.length){
+      const cards = buyApps.map(appCard);
+      const { wrap } = row('Rent or buy on', cards);
+      def.el.appendChild(wrap); def.navRows.push(cards);
+    }
+  } else {
+    def.el.appendChild(el('div','empty-state', `Not currently available on any of your apps.`));
+  }
+  rowIndex = baseRowCount; colIndex = 0;
+  refreshFocusVisuals();
 }
 
 function gameweekRow(fx){
@@ -1073,8 +1226,8 @@ if(window.Android && typeof window.Android.isYouTubeSignedIn === 'function'){
   YT_SIGNED_IN = window.Android.isYouTubeSignedIn();
 }
 
-['home','guide','sports','apps'].forEach(ensureScreen);
-renderGuide(); renderApps(); renderHome(); renderSports();
+['home','guide','sports','apps','search'].forEach(ensureScreen);
+renderGuide(); renderApps(); renderHome(); renderSports(); renderSearch();
 
 /* =========================================================
    SIDEBAR
@@ -1162,6 +1315,8 @@ function activate(cardEl){
     if(window.Android && typeof window.Android.launchApp === 'function'){
       window.Android.launchApp('com.amazon.firetv.youtube');
     }
+  } else if(kind === 'search-result'){
+    showProvidersFor(cardEl);
   }
 }
 
