@@ -1216,12 +1216,42 @@ function renderSports(){
   }
 }
 
+// Every launchable app actually on the device (not just the curated APPS
+// list used elsewhere) - fetched once via Android.getInstalledApps and
+// cached here. null means "not fetched yet".
+let allInstalledApps = null;
+
+function getInstalledAppsAsync(){
+  if(!(window.Android && typeof window.Android.getInstalledApps === 'function')) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const id = 'r' + (__reqCounter++);
+    window.__httpCallbacks[id] = (raw) => {
+      try{ resolve(JSON.parse(raw) || []); }catch(e){ resolve([]); }
+    };
+    window.Android.getInstalledApps(id);
+  });
+}
+
+async function loadAllInstalledApps(){
+  const apps = await getInstalledAppsAsync();
+  // Icons come back already fetched in this one batched call - drop them
+  // straight into the existing icon cache so appCard() picks them up for
+  // free instead of making a separate native call per app.
+  apps.forEach(a => { iconCache[a.pkg] = a.icon || null; });
+  allInstalledApps = apps.map(a => ({ id:a.pkg, pkg:a.pkg, name:a.name }));
+  if(currentScreen === 'apps'){ renderApps(); requestAnimationFrame(measureAppsGrid); }
+}
+
 function renderApps(){
   const def = screenDefs.apps;
   def.el.innerHTML = ''; def.navRows = [];
   def.el.appendChild(el('div','row-label','All Apps'));
 
-  const cards = getVisibleApps().map(appCard);
+  if(allInstalledApps === null){
+    def.el.appendChild(el('div','empty-state','Loading your apps…'));
+    return;
+  }
+  const cards = allInstalledApps.map(appCard);
   const grid = el('div','apps-grid');
   cards.forEach(c => grid.appendChild(c));
   def.el.appendChild(grid);
@@ -1267,6 +1297,7 @@ if(window.Android && typeof window.Android.isYouTubeSignedIn === 'function'){
 
 ['home','guide','sports','apps','search'].forEach(ensureScreen);
 renderGuide(); renderApps(); renderHome(); renderSports(); renderSearch();
+loadAllInstalledApps();
 
 /* =========================================================
    SIDEBAR
