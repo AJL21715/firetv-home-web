@@ -1238,15 +1238,18 @@ function getInstalledAppsAsync(){
 }
 
 async function loadAllInstalledApps(){
-  console.log('loadAllInstalledApps: start, Android.getInstalledApps =', window.Android && typeof window.Android.getInstalledApps);
   const apps = await getInstalledAppsAsync();
-  console.log('loadAllInstalledApps: got', apps.length, 'apps');
   // Icons come back already fetched in this one batched call - drop them
   // straight into the existing icon cache so appCard() picks them up for
   // free instead of making a separate native call per app.
   apps.forEach(a => { iconCache[a.pkg] = a.icon || null; });
   allInstalledApps = apps.map(a => ({ id:a.pkg, pkg:a.pkg, name:a.name }));
-  if(currentScreen === 'apps'){ renderApps(); requestAnimationFrame(measureAppsGrid); }
+  // Re-render unconditionally, same reasoning as refreshTvGuide - this
+  // resolves well after startup, almost always while some other screen is
+  // active, so gating the render behind "is Apps the active screen right
+  // now" left it stuck showing the loading state forever.
+  renderApps();
+  if(currentScreen === 'apps') requestAnimationFrame(measureAppsGrid);
 }
 
 function renderApps(){
