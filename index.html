@@ -1095,18 +1095,15 @@ async function showProvidersFor(cardEl){
   while(def.el.children.length > baseRowCount) def.el.removeChild(def.el.lastChild);
   def.navRows = def.navRows.slice(0, baseRowCount);
 
-  // Installed apps always come first, all together in one wrapping block, so
-  // the ones you can actually watch right now aren't buried below a big list
-  // of apps you don't have.
-  if(installed.length){
-    const cards = installed.map(appCard);
+  // Installed and not-installed matches all sit in one single wrapping row -
+  // installed ones first so they stand out, not-installed ones right after
+  // (tapping one just says so, rather than pretending it isn't there).
+  if(installed.length || notInstalled.length){
+    const cards = [
+      ...installed.map(appCard),
+      ...notInstalled.map(({app, logo}) => providerLogoCard(app, logo))
+    ];
     const { wrap, rowEl } = row(`Watch "${cardEl.dataset.name}" on`, cards);
-    rowEl.classList.add('row--wrap');
-    def.el.appendChild(wrap); def.navRows.push(cards);
-  }
-  if(notInstalled.length){
-    const cards = notInstalled.map(({app, logo}) => providerLogoCard(app, logo));
-    const { wrap, rowEl } = row('Also available on — not installed', cards);
     rowEl.classList.add('row--wrap');
     def.el.appendChild(wrap); def.navRows.push(cards);
   }
@@ -1360,7 +1357,7 @@ function activate(cardEl){
   } else if(kind === 'search-result'){
     showProvidersFor(cardEl);
   } else if(kind === 'app-not-installed'){
-    showToast(`${cardEl.dataset.name} isn't installed`);
+    showToast(`'${cardEl.dataset.name}' is not installed`);
   }
 }
 
