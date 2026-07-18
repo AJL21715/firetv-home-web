@@ -85,6 +85,7 @@
   .row-label .count{ color:var(--accent-light); }
 
   .row{ display:flex; gap:1.6vw; overflow-x:auto; padding:6px 10px 14px 10px; scroll-behavior:smooth; }
+  .row--wrap{ flex-wrap:wrap; overflow-x:visible; row-gap:14px; }
 
   /* Generic card - deliberately NO backdrop-filter here: this rule is shared by
      every card type including table rows, and a Fire TV Stick's GPU chokes on
@@ -444,21 +445,29 @@ const PROVIDER_NAME_TO_APP_ID = {
   'Tubi':'tubi',
   'YouTube':'youtube',
 };
-// Splits a list of TMDB provider names into: apps you have installed, apps
-// we know about but you don't have installed, and provider names we don't
-// have any app entry for at all (shown as plain text, nothing to launch).
-function resolveAppsForProviders(providerNames){
-  const ids = new Set(providerNames.map(n => PROVIDER_NAME_TO_APP_ID[n]).filter(Boolean));
-  const apps = APPS.filter(a => ids.has(a.id));
-  const installed = apps.filter(a => !!getCachedAppIcon(a.pkg));
-  const notInstalled = apps.filter(a => !getCachedAppIcon(a.pkg));
-  const unknownNames = providerNames.filter(n => !PROVIDER_NAME_TO_APP_ID[n]);
+// Splits a de-duplicated list of TMDB provider entries ({name, logo}) into:
+// apps you have installed, apps we know about but you don't have installed
+// (shown with TMDB's own real brand logo, not a generic letter), and provider
+// names we don't have any app entry for at all (shown as plain text).
+function resolveProvidersDetailed(providerEntries){
+  const installed = [], notInstalled = [], unknownNames = [];
+  providerEntries.forEach(p => {
+    const appId = PROVIDER_NAME_TO_APP_ID[p.name];
+    const app = appId && APPS.find(a => a.id === appId);
+    if(!app){ unknownNames.push(p.name); return; }
+    if(getCachedAppIcon(app.pkg)) installed.push(app);
+    else notInstalled.push({ app, logo: p.logo });
+  });
   return { installed, notInstalled, unknownNames };
 }
 
-function appCardWithStatus(app, installed){
-  const c = appCard(app);
-  if(!installed){ c.dataset.kind = 'app-not-installed'; c.classList.add('dim'); }
+// For a not-installed match, prefer TMDB's real brand logo over our generic
+// placeholder svg/letter - much less "silly" than a plain initial.
+function providerLogoCard(app, logoUrl){
+  const c = el('div','card card--app-plain dim'); c.tabIndex = 0;
+  c.dataset.kind = 'app-not-installed'; c.dataset.name = app.name;
+  const iconHtml = logoUrl ? `<img src="${logoUrl}" alt="${app.name}">` : appIconHtml(app);
+  c.innerHTML = `<div class="icon">${iconHtml}</div>`;
   return c;
 }
 
@@ -1068,11 +1077,17 @@ async function submitSearch(query){
 async function showProvidersFor(cardEl){
   showToast('Checking where to watch…');
   const providers = await getWatchProvidersAsync(Number(cardEl.dataset.id), cardEl.dataset.mediaType);
-  const subNames = providers.filter(p => p.category === 'flatrate' || p.category === 'free' || p.category === 'ads').map(p => p.name);
-  const buyNames = providers.filter(p => p.category === 'rent' || p.category === 'buy').map(p => p.name);
-  // A provider showing up in both the subscription and rent/buy lists (e.g.
-  // Prime Video offering both) only needs to appear once, under "Watch on".
-  const buyNamesOnly = buyNames.filter(n => !subNames.includes(n));
+
+  // De-dupe by name across categories (e.g. Prime Video showing up in both
+  // the subscription and rent/buy lists) - each provider only needs to
+  // appear once regardless of which list(s) TMDB put it in.
+  const byName = new Map();
+  const rank = (c) => (c === 'flatrate' || c === 'free' || c === 'ads') ? 0 : 1;
+  providers.forEach(p => {
+    const existing = byName.get(p.name);
+    if(!existing || rank(p.category) < rank(existing.category)) byName.set(p.name, p);
+  });
+  const { installed, notInstalled, unknownNames } = resolveProvidersDetailed(Array.from(byName.values()));
 
   const def = screenDefs.search;
   if(currentScreen !== 'search') return;
@@ -1080,37 +1095,28 @@ async function showProvidersFor(cardEl){
   while(def.el.children.length > baseRowCount) def.el.removeChild(def.el.lastChild);
   def.navRows = def.navRows.slice(0, baseRowCount);
 
-  let addedAny = false;
-  function addSection(label, providerNames){
-    if(!providerNames.length) return;
-    const { installed, notInstalled, unknownNames } = resolveAppsForProviders(providerNames);
-    if(installed.length){
-      const cards = installed.map(a => appCardWithStatus(a, true));
-      const { wrap } = row(label, cards);
-      def.el.appendChild(wrap); def.navRows.push(cards);
-      addedAny = true;
-    }
-    if(notInstalled.length || unknownNames.length){
-      const wrap = el('div');
-      wrap.appendChild(el('div','row-label', `${label} — not installed`));
-      if(notInstalled.length){
-        const cardsRow = el('div','row');
-        const cards = notInstalled.map(a => appCardWithStatus(a, false));
-        cards.forEach(c => cardsRow.appendChild(c));
-        wrap.appendChild(cardsRow);
-        def.navRows.push(cards);
-      }
-      if(unknownNames.length){
-        wrap.appendChild(el('div','provider-tags', unknownNames.join(', ')));
-      }
-      def.el.appendChild(wrap);
-      addedAny = true;
-    }
+  // Installed apps always come first, all together in one wrapping block, so
+  // the ones you can actually watch right now aren't buried below a big list
+  // of apps you don't have.
+  if(installed.length){
+    const cards = installed.map(appCard);
+    const { wrap, rowEl } = row(`Watch "${cardEl.dataset.name}" on`, cards);
+    rowEl.classList.add('row--wrap');
+    def.el.appendChild(wrap); def.navRows.push(cards);
   }
-  addSection(`Watch "${cardEl.dataset.name}" on`, subNames);
-  addSection('Rent or buy on', buyNamesOnly);
-
-  if(!addedAny){
+  if(notInstalled.length){
+    const cards = notInstalled.map(({app, logo}) => providerLogoCard(app, logo));
+    const { wrap, rowEl } = row('Also available on — not installed', cards);
+    rowEl.classList.add('row--wrap');
+    def.el.appendChild(wrap); def.navRows.push(cards);
+  }
+  if(unknownNames.length){
+    const wrap = el('div');
+    wrap.appendChild(el('div','row-label', 'Also available on'));
+    wrap.appendChild(el('div','provider-tags', unknownNames.join(', ')));
+    def.el.appendChild(wrap);
+  }
+  if(!installed.length && !notInstalled.length && !unknownNames.length){
     def.el.appendChild(el('div','empty-state', `Not currently available on any known apps.`));
   }
   rowIndex = baseRowCount; colIndex = 0;
