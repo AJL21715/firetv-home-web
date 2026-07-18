@@ -1225,7 +1225,12 @@ function getInstalledAppsAsync(){
   if(!(window.Android && typeof window.Android.getInstalledApps === 'function')) return Promise.resolve([]);
   return new Promise((resolve) => {
     const id = 'r' + (__reqCounter++);
+    // Encoding every app icon on the device can take a while the first time -
+    // give it a generous window, but never leave the Apps screen stuck on
+    // "Loading…" forever if something goes wrong natively.
+    const timeout = setTimeout(() => { delete window.__httpCallbacks[id]; resolve([]); }, 20000);
     window.__httpCallbacks[id] = (raw) => {
+      clearTimeout(timeout);
       try{ resolve(JSON.parse(raw) || []); }catch(e){ resolve([]); }
     };
     window.Android.getInstalledApps(id);
